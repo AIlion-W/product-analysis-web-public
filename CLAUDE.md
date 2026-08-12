@@ -26,6 +26,7 @@
 - 0／1–89／90–99／100 条依次对应 missing／insufficient／provisional／complete。F01 正式诊断要求我方两类评价各不少于 90 条；F02 在默认评价 20 条时保留前 20 明细、90 条时才可正式诊断；F03 要求我方问大家不少于 90 条，竞品逐个按 90 条门槛纳入。
 - Excel 在浏览器解析，文件不发送到服务器；XLSX 压缩文件最大 10MB，并在解压前限制中央目录声明的单 entry／总展开大小和压缩比；模型只接收最小逐条文本、压缩后的截图或严格 `SynthesisFacts`。
 - 主任务默认并发 4 个批次，运行时上限同为 4，失败自动重试 1 次。服务端模型调用默认 120 秒超时，超时必须主动 abort 并返回可重试的 `MODEL_TIMEOUT`，不得无限停留在运行态；部署环境可用 `NEIGONG_MODEL_TIMEOUT_MS` 调整。多个失败批次可一次并行重试，已成功批次不得重跑；只能排除失败竞品，不能排除我方产品。
+- `NEIGONG_MODEL` 只控制内功问诊文字任务；Claude 型号走 Chat Completions。截图任务必须使用 `NEIGONG_VISION_MODEL` 或 `OPENAI_MODEL`，不能自动继承 Claude 文字模型。中转站 Claude 输出只能做确定性字段投影，之后仍必须通过严格 Schema、rowId 和证据原文校验。
 - synthesis 只向客户端返回 `id/status/evidenceIds`；标题、诊断正文与 action 由代码确定性生成。retryable synthesis 失败自动重试 1 次，最终失败允许只重跑 synthesis。
 - `buildReportData` 必须重算数值聚合，并在 `validateEvidenceGraph` 通过后才能进入 `report` 阶段。校验失败不得显示部分正式报告。
 - F02 的低覆盖率与 F03 的主题集中度只能表述为运营关注信号，不得直接写成产品缺陷或已证明的信息缺口；对应 action 只能落到邀评问题、问答与详情页证据优化。

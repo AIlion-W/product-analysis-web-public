@@ -184,8 +184,10 @@ export async function buildPrimaryAnalysisTasks(
       .sort((left, right) => left.rank - right.rank || left.rowId.localeCompare(right.rowId))
       .slice(0, 20);
     if (top20.length === 20) {
-      const id = `top20-dimensions:${productId}`;
-      tasks.push(makeTask(id, productId, "top20-dimensions", { rows: top20.map(reviewInput) }));
+      chunk(top20, 10).forEach((rows, index) => {
+        const id = `top20-dimensions:${productId}:${index + 1}`;
+        tasks.push(makeTask(id, productId, "top20-dimensions", { rows: rows.map(reviewInput) }));
+      });
     }
 
     if (pack.screenshot?.status === "ready") {

@@ -704,7 +704,7 @@ test("exclude-product 只排除目标竞品未成功任务且成功任务保持�
   assert.doesNotThrow(() => JSON.stringify(excluded));
 });
 
-test("主任务每 50 行分批，前 20 和截图各一个且不预建 synthesis", async () => {
+test("主任务每 50 行分批，前 20 拆成两组 10 条并行且不预建 synthesis", async () => {
   const screenshotFile = new File([new Uint8Array([1])], "review.png", { type: "image/png" });
   const prepared = preparedScreenshot();
   const tasks = await buildPrimaryAnalysisTasks([productPack("own", screenshotFile)], {
@@ -717,9 +717,11 @@ test("主任务每 50 行分批，前 20 和截图各一个且不预建 synthesi
   const screenshots = tasks.filter((task) => task.task === "screenshot-metadata");
   assert.deepEqual(taxonomy.map((task) => task.payload.input.rows.length), [50, 5, 50, 1]);
   assert.deepEqual(questions.map((task) => task.payload.input.rows.length), [50, 1]);
-  assert.equal(top20.length, 1);
-  assert.deepEqual(top20[0].payload.input.rows.map((row) => row.rowId),
-    Array.from({ length: 20 }, (_, index) => `own-default-${index + 1}`));
+  assert.equal(top20.length, 2);
+  assert.deepEqual(top20.map((task) => task.payload.input.rows.map((row) => row.rowId)), [
+    Array.from({ length: 10 }, (_, index) => `own-default-${index + 1}`),
+    Array.from({ length: 10 }, (_, index) => `own-default-${index + 11}`),
+  ]);
   assert.equal(screenshots.length, 1);
   assert.deepEqual(screenshots[0].payload.input, prepared);
   assert.equal(tasks.some((task) => task.task === "synthesis"), false);
@@ -741,7 +743,7 @@ test("默认评价不足 20 条不创建六维任务，达到 20 条才创建", 
   const boundaryTasks = await buildPrimaryAnalysisTasks([boundary]);
 
   assert.equal(underTasks.some(({ task }) => task === "top20-dimensions"), false);
-  assert.equal(boundaryTasks.filter(({ task }) => task === "top20-dimensions").length, 1);
+  assert.equal(boundaryTasks.filter(({ task }) => task === "top20-dimensions").length, 2);
 });
 
 test("截图超出传输能力时降级为 missing 且不阻断 Excel 主任务", async () => {

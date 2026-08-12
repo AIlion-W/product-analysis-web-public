@@ -14,6 +14,8 @@ import * as modelTypes from "../lib/neigong/types.ts";
 const originalFetch = globalThis.fetch;
 const originalApiKey = process.env.OPENAI_API_KEY;
 const originalModelTimeout = process.env.NEIGONG_MODEL_TIMEOUT_MS;
+const originalNeigongModel = process.env.NEIGONG_MODEL;
+const originalNeigongVisionModel = process.env.NEIGONG_VISION_MODEL;
 
 test.afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -21,6 +23,10 @@ test.afterEach(() => {
   else process.env.OPENAI_API_KEY = originalApiKey;
   if (originalModelTimeout === undefined) delete process.env.NEIGONG_MODEL_TIMEOUT_MS;
   else process.env.NEIGONG_MODEL_TIMEOUT_MS = originalModelTimeout;
+  if (originalNeigongModel === undefined) delete process.env.NEIGONG_MODEL;
+  else process.env.NEIGONG_MODEL = originalNeigongModel;
+  if (originalNeigongVisionModel === undefined) delete process.env.NEIGONG_VISION_MODEL;
+  else process.env.NEIGONG_VISION_MODEL = originalNeigongVisionModel;
   delete process.env.OPENAI_BASE_URL;
   delete process.env.OPENAI_MODEL;
 });
@@ -334,6 +340,271 @@ test("模型调用使用指定 Responses API 协议、token 上限和 store=fals
   assert.equal(captured.body.store, false);
   assert.deepEqual(captured.body.text.format, RESPONSE_FORMATS["review-taxonomy"]);
   assert.equal(captured.init.headers.Authorization, "Bearer secret");
+});
+
+test("Claude Opus 自动改走 Chat Completions 严格 Schema 并解析 JSON 代码块", async () => {
+  process.env.OPENAI_BASE_URL = "https://api.openlux.ai/v1";
+  process.env.NEIGONG_MODEL = "claude-opus-5";
+  let captured;
+  globalThis.fetch = async (url, init) => {
+    captured = { url, init, body: JSON.parse(init.body) };
+    const output = {
+      requestId: "req-1",
+      labels: [{ rowId: "r1", typeId: "t1", evidenceSource: "initial", evidenceQuote: "很去屑" }],
+    };
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: `\`\`\`json\n${JSON.stringify(output)}\n\`\`\`` }, finish_reason: "stop" }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+
+  const result = await callNeigongModel(request("review-taxonomy", { rows: reviewRows(1) }), "secret");
+
+  assert.deepEqual(result, { labels: [{ rowId: "r1", typeId: "t1", evidenceSource: "initial", evidenceQuote: "很去屑" }] });
+  assert.equal(captured.url, "https://api.openlux.ai/v1/chat/completions");
+  assert.equal(captured.body.model, "claude-opus-5");
+  assert.equal(captured.body.max_tokens, MAX_OUTPUT_TOKENS["review-taxonomy"]);
+  assert.equal(captured.body.temperature, 0);
+  assert.deepEqual(captured.body.response_format, {
+    type: "json_schema",
+    json_schema: RESPONSE_FORMATS["review-taxonomy"],
+  });
+  assert.equal(captured.body.messages[0].role, "system");
+  assert.equal(captured.body.messages[1].role, "user");
+  assert.equal(captured.init.headers.Authorization, "Bearer secret");
+});
+
+test("Claude Opus 文本分析不接管截图，截图使用独立视觉模型", async () => {
+  process.env.OPENAI_BASE_URL = "https://api.openlux.ai/v1";
+  process.env.OPENAI_MODEL = "gpt-5.6-sol";
+  process.env.NEIGONG_MODEL = "claude-opus-5";
+  let captured;
+  globalThis.fetch = async (url, init) => {
+    captured = { url, body: JSON.parse(init.body) };
+    return responseOutput({
+      productName: null,
+      reviewTotal: null,
+      questionTotal: null,
+      tags: [],
+      completeness: "missing",
+    });
+  };
+
+  const result = await callNeigongModel(request("screenshot-metadata", {
+    dataUrl: "data:image/png;base64,iVBORw0KGgo=",
+  }), "secret");
+
+  assert.equal(result.completeness, "missing");
+  assert.equal(captured.url, "https://api.openlux.ai/v1/responses");
+  assert.equal(captured.body.model, "gpt-5.6-sol");
+});
+
+test("Claude Opus 评价 items 确定性转换为受校验的 labels", async () => {
+  process.env.OPENAI_BASE_URL = "https://api.openlux.ai/v1";
+  process.env.NEIGONG_MODEL = "claude-opus-5";
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    choices: [{
+      message: {
+        content: JSON.stringify({
+          requestId: "req-1",
+          productId: "own",
+          items: [{
+            rowId: "r1",
+            category: "t1",
+            categoryName: "纯功效陈述",
+            evidenceSource: "initial",
+            evidenceQuote: "很去屑",
+            reason: "仅陈述效果",
+          }],
+        }),
+      },
+      finish_reason: "stop",
+    }],
+  }), { status: 200, headers: { "Content-Type": "application/json" } });
+
+  const result = await callNeigongModel(request("review-taxonomy", { rows: reviewRows(1) }), "secret");
+
+  assert.deepEqual(result, {
+    labels: [{ rowId: "r1", typeId: "t1", evidenceSource: "initial", evidenceQuote: "很去屑" }],
+  });
+});
+
+test("Claude Opus 评价 results tier 确定性转换为受校验的 labels", async () => {
+  process.env.OPENAI_BASE_URL = "https://api.openlux.ai/v1";
+  process.env.NEIGONG_MODEL = "claude-opus-5";
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    choices: [{
+      message: {
+        content: JSON.stringify({
+          requestId: "req-1",
+          productId: "own",
+          results: [{
+            rowId: "r1",
+            tier: "t1",
+            tierLabel: "纯功效陈述",
+            evidenceSource: "initial",
+            evidenceQuote: "很去屑",
+            reason: "仅陈述效果",
+            hasFollowupValue: false,
+          }],
+        }),
+      },
+      finish_reason: "stop",
+    }],
+  }), { status: 200, headers: { "Content-Type": "application/json" } });
+
+  const result = await callNeigongModel(request("review-taxonomy", { rows: reviewRows(1) }), "secret");
+
+  assert.deepEqual(result, {
+    labels: [{ rowId: "r1", typeId: "t1", evidenceSource: "initial", evidenceQuote: "很去屑" }],
+  });
+});
+
+test("Claude Opus 问题 rows 确定性转换为受校验的 labels", async () => {
+  process.env.OPENAI_BASE_URL = "https://api.openlux.ai/v1";
+  process.env.NEIGONG_MODEL = "claude-opus-5";
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    choices: [{
+      message: {
+        content: JSON.stringify({
+          requestId: "req-1",
+          productId: "own",
+          rows: [{
+            rowId: "q1",
+            topicId: "q8",
+            topicLabel: "使用方法与见效周期",
+            topicEvidence: "多久见效",
+          }],
+        }),
+      },
+      finish_reason: "stop",
+    }],
+  }), { status: 200, headers: { "Content-Type": "application/json" } });
+
+  const result = await callNeigongModel(request("question-topic", { rows: questionRows(1) }), "secret");
+
+  assert.deepEqual(result, {
+    labels: [{ rowId: "q1", topicId: "q8", topicEvidence: "多久见效" }],
+  });
+});
+
+test("Claude Opus 问题 items topic 确定性转换为受校验的 labels", async () => {
+  process.env.OPENAI_BASE_URL = "https://api.openlux.ai/v1";
+  process.env.NEIGONG_MODEL = "claude-opus-5";
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    choices: [{
+      message: {
+        content: JSON.stringify({
+          requestId: "req-1",
+          productId: "own",
+          items: [{
+            rowId: "q1",
+            topic: "q8",
+            topicEvidence: "多久见效",
+          }],
+        }),
+      },
+      finish_reason: "stop",
+    }],
+  }), { status: 200, headers: { "Content-Type": "application/json" } });
+
+  const result = await callNeigongModel(request("question-topic", { rows: questionRows(1) }), "secret");
+
+  assert.deepEqual(result, {
+    labels: [{ rowId: "q1", topicId: "q8", topicEvidence: "多久见效" }],
+  });
+});
+
+test("Claude Opus 只按评价字段特征识别唯一结果数组，不依赖容器名", async () => {
+  process.env.OPENAI_BASE_URL = "https://api.openlux.ai/v1";
+  process.env.NEIGONG_MODEL = "claude-opus-5";
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    choices: [{
+      message: {
+        content: JSON.stringify({
+          requestId: "req-1",
+          classifications: [{
+            rowId: "r1",
+            typeId: "t1",
+            evidenceSource: "initial",
+            evidenceQuote: "很去屑",
+          }],
+        }),
+      },
+      finish_reason: "stop",
+    }],
+  }), { status: 200, headers: { "Content-Type": "application/json" } });
+
+  const result = await callNeigongModel(request("review-taxonomy", { rows: reviewRows(1) }), "secret");
+
+  assert.equal(result.labels[0].typeId, "t1");
+});
+
+test("Claude Opus 只按问题字段特征识别唯一结果数组，不依赖容器名", async () => {
+  process.env.OPENAI_BASE_URL = "https://api.openlux.ai/v1";
+  process.env.NEIGONG_MODEL = "claude-opus-5";
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    choices: [{
+      message: {
+        content: JSON.stringify({
+          requestId: "req-1",
+          topicResults: [{
+            rowId: "q1",
+            topicId: "q8",
+            topicEvidence: "多久见效",
+          }],
+        }),
+      },
+      finish_reason: "stop",
+    }],
+  }), { status: 200, headers: { "Content-Type": "application/json" } });
+
+  const result = await callNeigongModel(request("question-topic", { rows: questionRows(1) }), "secret");
+
+  assert.equal(result.labels[0].topicId, "q8");
+});
+
+test("Claude Opus 六维扁平 results 确定性转换为受校验的 rows", async () => {
+  process.env.OPENAI_BASE_URL = "https://api.openlux.ai/v1";
+  process.env.NEIGONG_MODEL = "claude-opus-5";
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    choices: [{
+      message: {
+        content: JSON.stringify({
+          requestId: "req-1",
+          productId: "own",
+          results: [{
+            rowId: "r1",
+            persona: false,
+            personaEvidence: "",
+            scene: false,
+            sceneEvidence: "",
+            painPoint: false,
+            painPointEvidence: "",
+            detail: false,
+            detailEvidence: "",
+            effect: true,
+            effectEvidence: "很去屑",
+            delight: false,
+            delightEvidence: "",
+            score: 1,
+          }],
+        }),
+      },
+      finish_reason: "stop",
+    }],
+  }), { status: 200, headers: { "Content-Type": "application/json" } });
+
+  const result = await callNeigongModel(request("top20-dimensions", { rows: reviewRows(1) }), "secret");
+
+  assert.deepEqual(result, {
+    rows: [{
+      rowId: "r1",
+      dimensions: { persona: false, scene: false, painPoint: false, detail: false, effect: true, delight: false },
+      evidence: { persona: "", scene: "", painPoint: "", detail: "", effect: "很去屑", delight: "" },
+      score: 1,
+      note: "",
+    }],
+  });
 });
 
 test("解析 output content 文本并识别 refusal、空输出、非法 JSON", async () => {

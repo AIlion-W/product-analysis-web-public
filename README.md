@@ -100,10 +100,12 @@ npm run dev
 OPENAI_API_KEY=你的模型服务密钥
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-5.6
+NEIGONG_MODEL=
+NEIGONG_VISION_MODEL=
 NEIGONG_MODEL_TIMEOUT_MS=120000
 ```
 
-模型服务需要兼容 OpenAI Responses API 的 `/v1/responses`，并支持严格 `json_schema` 结构化输出。自定义中转站如果只兼容 Chat Completions，网站会返回 `MODEL_UPSTREAM` 或 `MODEL_SCHEMA_INVALID`。
+`NEIGONG_MODEL` 可单独指定内功问诊文字分析模型；留空时继承 `OPENAI_MODEL`。Claude 型号会自动改走 `/v1/chat/completions`，其他型号继续使用 `/v1/responses`。`NEIGONG_VISION_MODEL` 只控制截图识别；留空时继承 `OPENAI_MODEL`，不会继承 Claude 文字模型。模型结果仍会经过固定目录、原始行引用和严格 Schema 校验，中转站未严格执行 `json_schema` 时也不会直接采用未经校验的自由输出。
 
 ## 部署到 Cloudflare Workers
 
@@ -116,7 +118,7 @@ npm install
 npx wrangler login
 ```
 
-2. 在 Cloudflare Dashboard 的 Worker「Settings → Variables and Secrets」中配置 `OPENAI_API_KEY`，并按需配置 `OPENAI_BASE_URL`、`OPENAI_MODEL`、`NEIGONG_MODEL_TIMEOUT_MS`。密钥必须使用 Secret 类型。
+2. 在 Cloudflare Dashboard 的 Worker「Settings → Variables and Secrets」中配置 `OPENAI_API_KEY`，并按需配置 `OPENAI_BASE_URL`、`OPENAI_MODEL`、`NEIGONG_MODEL`、`NEIGONG_VISION_MODEL`、`NEIGONG_MODEL_TIMEOUT_MS`。密钥必须使用 Secret 类型。
 
 3. 部署：
 

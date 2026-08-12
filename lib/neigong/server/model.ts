@@ -31,8 +31,20 @@ function modelError(code: string, message: string, retryable = false): NeigongMo
   return new NeigongModelError(code, message, retryable);
 }
 
-function getResponsesUrl() {
-  return `${(process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "")}/responses`;
+function getConfiguredModel(task: ModelTask) {
+  if (task === "screenshot-metadata") {
+    return process.env.NEIGONG_VISION_MODEL || process.env.OPENAI_MODEL || "gpt-5.6";
+  }
+  return process.env.NEIGONG_MODEL || process.env.OPENAI_MODEL || "gpt-5.6";
+}
+
+function usesChatCompletions(model: string) {
+  return model.startsWith("claude-");
+}
+
+function getModelUrl(model: string) {
+  const baseUrl = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
+  return `${baseUrl}/${usesChatCompletions(model) ? "chat/completions" : "responses"}`;
 }
 
 function getModelTimeoutMs() {
@@ -100,6 +112,100 @@ function extractOutputText(value: unknown): string | null {
   return texts.length ? texts.join("") : null;
 }
 
+function extractChatOutputText(value: unknown): string | null {
+  if (typeof value !== "object" || value === null) return null;
+  const choices = (value as Record<string, unknown>).choices;
+  if (!Array.isArray(choices)) return null;
+  const first = choices[0];
+  if (typeof first !== "object" || first === null) return null;
+  const message = (first as Record<string, unknown>).message;
+  if (typeof message !== "object" || message === null) return null;
+  const content = (message as Record<string, unknown>).content;
+  return typeof content === "string" && content.trim() ? content : null;
+}
+
+function unwrapJsonCodeFence(value: string) {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/iu);
+  return match ? match[1] : trimmed;
+}
+
+const DIMENSION_KEYS = ["persona", "scene", "painPoint", "detail", "effect", "delight"] as const;
+
+function isClaudeRow(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function findUniqueClaudeRows(
+  result: Record<string, unknown>,
+  matches: (row: Record<string, unknown>) => boolean,
+) {
+  const candidates = Object.values(result)
+    .filter((value): value is unknown[] => Array.isArray(value))
+    .filter((rows) => rows.length > 0 && rows.every((row) => isClaudeRow(row) && matches(row)));
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+function normalizeClaudeResult(task: ModelTask, value: unknown) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const result = { ...value as Record<string, unknown> };
+  delete result.requestId;
+  delete result.productId;
+  delete result.task;
+  const claudeReviewItems = findUniqueClaudeRows(result, (item) => (
+    typeof item.rowId === "string"
+    && typeof (item.typeId ?? item.category ?? item.tier) === "string"
+    && typeof item.evidenceSource === "string"
+    && typeof item.evidenceQuote === "string"
+  ));
+  if (task === "review-taxonomy" && !Array.isArray(result.labels) && claudeReviewItems) {
+    return {
+      labels: claudeReviewItems.map((raw) => {
+        const item = raw as Record<string, unknown>;
+        return {
+          rowId: item.rowId,
+          typeId: item.typeId ?? item.category ?? item.tier,
+          evidenceSource: item.evidenceSource,
+          evidenceQuote: item.evidenceQuote,
+        };
+      }),
+    };
+  }
+  const claudeQuestionItems = findUniqueClaudeRows(result, (item) => (
+    typeof item.rowId === "string"
+    && typeof (item.topicId ?? item.topic) === "string"
+    && typeof item.topicEvidence === "string"
+  ));
+  if (task === "question-topic" && !Array.isArray(result.labels) && claudeQuestionItems) {
+    return {
+      labels: claudeQuestionItems.map((raw) => {
+        const item = raw as Record<string, unknown>;
+        return {
+          rowId: item.rowId,
+          topicId: item.topicId ?? item.topic,
+          topicEvidence: item.topicEvidence,
+        };
+      }),
+    };
+  }
+  if (task === "top20-dimensions" && !Array.isArray(result.rows) && Array.isArray(result.results)) {
+    return {
+      rows: result.results.map((raw) => {
+        if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return raw;
+        const item = raw as Record<string, unknown>;
+        return {
+          rowId: item.rowId,
+          dimensions: Object.fromEntries(DIMENSION_KEYS.map((key) => [key, item[key]])),
+          evidence: Object.fromEntries(DIMENSION_KEYS.map((key) => [key, item[`${key}Evidence`]])),
+          score: item.score,
+          note: typeof item.note === "string" ? item.note : "",
+        };
+      }),
+    };
+  }
+  return result;
+}
+
 export async function callNeigongModel<T extends ModelTask>(
   rawRequest: ModelTaskRequest & { task: T },
   apiKey = process.env.OPENAI_API_KEY,
@@ -110,24 +216,44 @@ export async function callNeigongModel<T extends ModelTask>(
   if (!apiKey) throw modelError("MODEL_NOT_CONFIGURED", "模型服务未配置");
   const request = validation.value;
   const lifetime = createModelRequestLifetime(signal);
+  const model = getConfiguredModel(request.task);
+  const chatCompletions = usesChatCompletions(model);
+  const instructions = getNeigongInstructions(request.task);
+  const input = buildNeigongInput(request);
 
   try {
     let response: Response;
     try {
-      response = await fetch(getResponsesUrl(), {
+      response = await fetch(getModelUrl(model), {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          model: process.env.OPENAI_MODEL || "gpt-5.6",
-          instructions: getNeigongInstructions(request.task),
-          input: [{ role: "user", content: buildNeigongInput(request) }],
-          text: { format: RESPONSE_FORMATS[request.task] },
-          max_output_tokens: MAX_OUTPUT_TOKENS[request.task],
-          store: false,
-        }),
+        body: JSON.stringify(chatCompletions
+          ? {
+              model,
+              messages: [
+                { role: "system", content: instructions },
+                {
+                  role: "user",
+                  content: input.map((item) => item.type === "input_text"
+                    ? { type: "text", text: item.text }
+                    : { type: "image_url", image_url: { url: item.image_url, detail: item.detail } }),
+                },
+              ],
+              response_format: { type: "json_schema", json_schema: RESPONSE_FORMATS[request.task] },
+              max_tokens: MAX_OUTPUT_TOKENS[request.task],
+              temperature: 0,
+            }
+          : {
+              model,
+              instructions,
+              input: [{ role: "user", content: input }],
+              text: { format: RESPONSE_FORMATS[request.task] },
+              max_output_tokens: MAX_OUTPUT_TOKENS[request.task],
+              store: false,
+            }),
         signal: lifetime.signal,
       });
     } catch (error) {
@@ -156,12 +282,15 @@ export async function callNeigongModel<T extends ModelTask>(
 
     const refusal = findRefusal(apiResponse);
     if (refusal) throw modelError("MODEL_SCHEMA_INVALID", "模型拒绝输出");
-    const outputText = extractOutputText(apiResponse);
+    const outputText = chatCompletions
+      ? extractChatOutputText(apiResponse)
+      : extractOutputText(apiResponse);
     if (!outputText) throw modelError("MODEL_SCHEMA_INVALID", "模型输出为空");
 
     let output: unknown;
     try {
-      output = JSON.parse(outputText);
+      const parsed = JSON.parse(chatCompletions ? unwrapJsonCodeFence(outputText) : outputText);
+      output = chatCompletions ? normalizeClaudeResult(request.task, parsed) : parsed;
     } catch {
       throw modelError("MODEL_SCHEMA_INVALID", "模型输出不是合法 JSON");
     }
