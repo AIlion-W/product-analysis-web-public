@@ -19,6 +19,8 @@
 | 我方产品与客诉知识 | `lib/neigong/server/knowledge.ts` |
 | 模型提示词与严格 Schema | `lib/neigong/server/prompts.ts`、`lib/neigong/server/schemas.ts` |
 | 独立内功问诊接口 | `app/api/neigong/analyze/route.ts` |
+| Nuwa 强制鉴权代理入口 | `app/api/nuwa/analyze/route.ts`、`app/api/nuwa/neigong/analyze/route.ts` |
+| 动态知识边界与代理 Token 鉴权 | `lib/server/knowledge-context.ts` |
 | 六表 Excel 导出 | `lib/neigong/excel-export.ts` |
 | 六区离线 HTML 导出 | `lib/neigong/html-export.ts` |
 | 用户操作说明生成器与成品 | `tools/update_usage_guide.py`、`public/产品分析助手使用说明.docx` |
@@ -30,3 +32,4 @@
 1. 网页运行时只以本项目代码和当前自动化测试为准，不依赖本机 skills 或外部目录。
 2. 字段协议冲突时以 `lib/neigong/types.ts` 为准；上传表头别名、规范化与额外列容错以 `lib/neigong/excel-parser.ts` 为准；固定分类冲突时以 `lib/neigong/catalog.ts` 为准；门槛、聚合与证据链冲突时以 `lib/neigong/rules.ts` 和 `lib/neigong/report-builder.ts` 为准；业务展示标签冲突时以 `lib/neigong/report-presentation.ts` 为准；接口输入冲突时以 `lib/neigong/server/schemas.ts` 为准。
 3. 设计文档和实施计划记录决策背景，不覆盖已经通过测试的运行代码。用户说明、README 或接手文档与代码不一致时，先修正文档和测试，不在调用点兼容第二套字段或规则。
+4. 动态知识只能作为通用分析的非权威补充资料；不得进入内功问诊的固定提示词、严格 Schema、原始行引用与证据链。
