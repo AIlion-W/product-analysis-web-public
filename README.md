@@ -100,9 +100,11 @@ npm run dev
 OPENAI_API_KEY=你的模型服务密钥
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-5.6
+ANALYSIS_MODEL_TIMEOUT_MS=120000
 NEIGONG_MODEL=
 NEIGONG_VISION_MODEL=
 NEIGONG_MODEL_TIMEOUT_MS=120000
+PRODUCT_ANALYSIS_PROXY_TOKEN=仅供受信任服务端代理使用的随机强 Token
 ```
 
 `NEIGONG_MODEL` 可单独指定内功问诊文字分析模型；留空时继承 `OPENAI_MODEL`。Claude 型号会自动改走 `/v1/chat/completions`，其他型号继续使用 `/v1/responses`。`NEIGONG_VISION_MODEL` 只控制截图识别；留空时继承 `OPENAI_MODEL`，不会继承 Claude 文字模型。模型结果仍会经过固定目录、原始行引用和严格 Schema 校验，中转站未严格执行 `json_schema` 时也不会直接采用未经校验的自由输出。
@@ -118,7 +120,9 @@ npm install
 npx wrangler login
 ```
 
-2. 在 Cloudflare Dashboard 的 Worker「Settings → Variables and Secrets」中配置 `OPENAI_API_KEY`，并按需配置 `OPENAI_BASE_URL`、`OPENAI_MODEL`、`NEIGONG_MODEL`、`NEIGONG_VISION_MODEL`、`NEIGONG_MODEL_TIMEOUT_MS`。密钥必须使用 Secret 类型。
+2. 在 Cloudflare Dashboard 的 Worker「Settings → Variables and Secrets」中配置 `OPENAI_API_KEY`，并按需配置 `OPENAI_BASE_URL`、`OPENAI_MODEL`、`ANALYSIS_MODEL_TIMEOUT_MS`、`NEIGONG_MODEL`、`NEIGONG_VISION_MODEL`、`NEIGONG_MODEL_TIMEOUT_MS`。接入 Nuwa 时还必须把 `PRODUCT_ANALYSIS_PROXY_TOKEN` 配置为 Secret，并在 Nuwa 服务端配置相同 Token。密钥必须使用 Secret 类型。
+
+Nuwa 仅调用强制 Token 鉴权的 `/api/nuwa/analyze` 与 `/api/nuwa/neigong/analyze`。原公开页面继续使用原有接口和原有分析路径；动态知识只允许进入通用分析，内功问诊仍执行固定目录、严格 Schema 与证据链，不注入动态知识。
 
 3. 部署：
 

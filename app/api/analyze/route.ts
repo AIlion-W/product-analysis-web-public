@@ -1,3 +1,5 @@
+// Node contract tests execute source TypeScript directly; runtime imports need extensions.
+// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import {
   getCompleteSummaryPrompt,
   getSystemPrompt,
@@ -5,8 +7,14 @@ import {
   isSpecialistModule,
   MODULE_LABELS,
   type AnalysisModule,
-} from "../../../lib/prompts";
-import { validateMainImageFiles } from "../../../lib/main-image";
+} from "../../../lib/prompts.ts";
+// @ts-expect-error TS5097 is a no-emit bundler restriction.
+import { validateMainImageFiles } from "../../../lib/main-image.ts";
+// @ts-expect-error TS5097 is a no-emit bundler restriction.
+import {
+  authorizeKnowledgeContext,
+  buildKnowledgeContextInput,
+} from "../../../lib/server/knowledge-context.ts";
 import { unzipSync } from "fflate";
 
 export const runtime = "edge";
@@ -562,25 +570,40 @@ async function callModel({
     ? normalizedBaseUrl
     : `${normalizedBaseUrl}/responses`;
 
-  const modelResponse = await fetch(responsesEndpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || "gpt-5.6",
-      instructions,
-      input: [
-        {
-          role: "user",
-          content,
-        },
-      ],
-      max_output_tokens: maxOutputTokens,
-      store: false,
-    }),
-  });
+  const configuredTimeout = Number(process.env.ANALYSIS_MODEL_TIMEOUT_MS ?? 120_000);
+  const timeoutMs = Number.isFinite(configuredTimeout)
+    ? Math.min(Math.max(Math.trunc(configuredTimeout), 1_000), 150_000)
+    : 120_000;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let modelResponse: Response;
+  try {
+    modelResponse = await fetch(responsesEndpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-5.6",
+        instructions,
+        input: [
+          {
+            role: "user",
+            content,
+          },
+        ],
+        max_output_tokens: maxOutputTokens,
+        store: false,
+      }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error("MODEL_TIMEOUT");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const payload = (await modelResponse.json()) as {
     error?: { message?: string };
@@ -661,6 +684,23 @@ export async function POST(request: Request) {
   } catch {
     return jsonResponse({ error: "无法读取上传资料，请重新选择文件。" }, 400);
   }
+
+  const knowledgeAuthorization = authorizeKnowledgeContext(
+    formData.get("knowledgeContext"),
+    request.headers.get("X-Product-Analysis-Token"),
+  );
+  if (!knowledgeAuthorization.ok) {
+    return jsonResponse(
+      {
+        error: knowledgeAuthorization.error,
+        code: knowledgeAuthorization.code,
+      },
+      knowledgeAuthorization.status,
+    );
+  }
+  const knowledgeInput = buildKnowledgeContextInput(
+    knowledgeAuthorization.context,
+  );
 
   const moduleValue = String(formData.get("module") ?? "");
   if (!isAnalysisModule(moduleValue)) {
@@ -775,6 +815,7 @@ export async function POST(request: Request) {
               analysisFocus: competitorAnalysisFocus,
               competitorManifest,
             });
+      if (knowledgeInput) content.push(knowledgeInput);
       const result = await callModel({
         apiKey,
         instructions: getSystemPrompt(moduleValue),
@@ -830,6 +871,7 @@ export async function POST(request: Request) {
               ? Object.values(COMPETITOR_DIMENSION_LABELS).join("、")
               : undefined,
         });
+        if (knowledgeInput) content.push(knowledgeInput);
         const result = await callModel({
           apiKey,
           instructions: getSystemPrompt(module),
@@ -869,6 +911,7 @@ export async function POST(request: Request) {
         ].join("\n"),
       },
     ];
+    if (knowledgeInput) summaryContent.push(knowledgeInput);
     const result = await callModel({
       apiKey,
       instructions: getCompleteSummaryPrompt(),
@@ -901,6 +944,10 @@ export async function POST(request: Request) {
         { error: "模型服务配置无效，请检查服务器端 API Key。" },
         502,
       );
+    }
+
+    if (error instanceof Error && error.message === "MODEL_TIMEOUT") {
+      return jsonResponse({ error: "模型响应超时，请稍后重试。", code: "MODEL_TIMEOUT" }, 504);
     }
 
     if (error instanceof Error && error.message === "MODEL_EMPTY") {
