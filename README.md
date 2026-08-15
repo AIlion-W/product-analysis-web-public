@@ -124,6 +124,8 @@ npx wrangler login
 
 Nuwa 仅调用强制 Token 鉴权的 `/api/nuwa/analyze` 与 `/api/nuwa/neigong/analyze`。原公开页面继续使用原有接口和原有分析路径；动态知识只允许进入通用分析，内功问诊仍执行固定目录、严格 Schema 与证据链，不注入动态知识。
 
+Nuwa 专用路由的模型配置由 Nuwa 服务端在代理请求中读取网站「模型管理」里的默认对话模型和默认视觉模型，并在代理 Token 校验通过后使用；因此接入 Nuwa 时无需在 Worker 中重复配置 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`、`NEIGONG_MODEL` 或 `NEIGONG_VISION_MODEL`。这些环境变量继续仅供本仓库原公开页面和独立部署使用。模型凭据不会进入浏览器、分析请求正文或接口响应。
+
 3. 部署：
 
 ```bash

@@ -21,6 +21,7 @@
 | 独立内功问诊接口 | `app/api/neigong/analyze/route.ts` |
 | Nuwa 强制鉴权代理入口 | `app/api/nuwa/analyze/route.ts`、`app/api/nuwa/neigong/analyze/route.ts` |
 | 动态知识边界与代理 Token 鉴权 | `lib/server/knowledge-context.ts` |
+| Nuwa 网站默认模型运行配置边界 | `lib/server/nuwa-model-runtime.ts` |
 | 六表 Excel 导出 | `lib/neigong/excel-export.ts` |
 | 六区离线 HTML 导出 | `lib/neigong/html-export.ts` |
 | 用户操作说明生成器与成品 | `tools/update_usage_guide.py`、`public/产品分析助手使用说明.docx` |

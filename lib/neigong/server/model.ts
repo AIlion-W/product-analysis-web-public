@@ -4,6 +4,8 @@ import type { ModelTask, ModelTaskOutputMap, ModelTaskRequest } from "../types";
 import { buildNeigongInput, getNeigongInstructions } from "./prompts.ts";
 // @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { RESPONSE_FORMATS, validateModelTaskReferences, validateModelTaskRequest, validateModelTaskResult } from "./schemas.ts";
+// @ts-expect-error TS5097 is a no-emit bundler restriction.
+import type { NuwaModelRuntime } from "../../server/nuwa-model-runtime.ts";
 
 export const MAX_OUTPUT_TOKENS: Record<ModelTask, number> = {
   "review-taxonomy": 8_000,
@@ -31,7 +33,10 @@ function modelError(code: string, message: string, retryable = false): NeigongMo
   return new NeigongModelError(code, message, retryable);
 }
 
-function getConfiguredModel(task: ModelTask) {
+function getConfiguredModel(task: ModelTask, runtime?: NuwaModelRuntime) {
+  if (runtime) {
+    return task === "screenshot-metadata" ? runtime.vision.model : runtime.primary.model;
+  }
   if (task === "screenshot-metadata") {
     return process.env.NEIGONG_VISION_MODEL || process.env.OPENAI_MODEL || "gpt-5.6";
   }
@@ -42,8 +47,11 @@ function usesChatCompletions(model: string) {
   return model.startsWith("claude-");
 }
 
-function getModelUrl(model: string) {
-  const baseUrl = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
+function getModelUrl(model: string, runtime?: NuwaModelRuntime, task?: ModelTask) {
+  const runtimeEndpoint = runtime
+    ? task === "screenshot-metadata" ? runtime.vision : runtime.primary
+    : undefined;
+  const baseUrl = (runtimeEndpoint?.baseUrl || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
   return `${baseUrl}/${usesChatCompletions(model) ? "chat/completions" : "responses"}`;
 }
 
@@ -210,13 +218,18 @@ export async function callNeigongModel<T extends ModelTask>(
   rawRequest: ModelTaskRequest & { task: T },
   apiKey = process.env.OPENAI_API_KEY,
   signal?: AbortSignal,
+  runtime?: NuwaModelRuntime,
 ): Promise<ModelTaskOutputMap[T]> {
   const validation = validateModelTaskRequest(rawRequest);
   if (!validation.ok) throw modelError(validation.code, validation.error);
-  if (!apiKey) throw modelError("MODEL_NOT_CONFIGURED", "模型服务未配置");
   const request = validation.value;
+  const runtimeEndpoint = runtime
+    ? request.task === "screenshot-metadata" ? runtime.vision : runtime.primary
+    : undefined;
+  const resolvedApiKey = runtimeEndpoint?.apiKey ?? apiKey;
+  if (!resolvedApiKey) throw modelError("MODEL_NOT_CONFIGURED", "模型服务未配置");
   const lifetime = createModelRequestLifetime(signal);
-  const model = getConfiguredModel(request.task);
+  const model = getConfiguredModel(request.task, runtime);
   const chatCompletions = usesChatCompletions(model);
   const instructions = getNeigongInstructions(request.task);
   const input = buildNeigongInput(request);
@@ -224,10 +237,10 @@ export async function callNeigongModel<T extends ModelTask>(
   try {
     let response: Response;
     try {
-      response = await fetch(getModelUrl(model), {
+      response = await fetch(getModelUrl(model, runtime, request.task), {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          Authorization: `Bearer ${resolvedApiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(chatCompletions
