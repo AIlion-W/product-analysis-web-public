@@ -15,6 +15,7 @@ import {
   authorizeKnowledgeContext,
   buildKnowledgeContextInput,
 } from "../../../lib/server/knowledge-context.ts";
+import type { NuwaModelRuntime } from "../../../lib/server/nuwa-model-runtime.ts";
 import { unzipSync } from "fflate";
 
 export const runtime = "edge";
@@ -553,18 +554,17 @@ function buildMainImageContent({
 }
 
 async function callModel({
-  apiKey,
+  endpoint,
   instructions,
   content,
   maxOutputTokens,
 }: {
-  apiKey: string;
+  endpoint: { apiKey: string; baseUrl: string; model: string };
   instructions: string;
   content: InputContent[];
   maxOutputTokens: number;
 }) {
-  const configuredBaseUrl =
-    process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1";
+  const configuredBaseUrl = endpoint.baseUrl;
   const normalizedBaseUrl = configuredBaseUrl.replace(/\/+$/, "");
   const responsesEndpoint = normalizedBaseUrl.endsWith("/responses")
     ? normalizedBaseUrl
@@ -581,11 +581,11 @@ async function callModel({
     modelResponse = await fetch(responsesEndpoint, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${endpoint.apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-5.6",
+        model: endpoint.model,
         instructions,
         input: [
           {
@@ -666,9 +666,13 @@ function archiveErrorMessage(error: unknown) {
   return messages[code] ?? "压缩包处理失败，请重新打包后上传。";
 }
 
-export async function POST(request: Request) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
+export async function handleAnalyze(request: Request, runtime?: NuwaModelRuntime) {
+  const endpoint = runtime?.primary ?? {
+    apiKey: process.env.OPENAI_API_KEY?.trim() ?? "",
+    baseUrl: process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1",
+    model: process.env.OPENAI_MODEL?.trim() || "gpt-5.6",
+  };
+  if (!endpoint.apiKey) {
     return jsonResponse(
       {
         error: "分析能力正在配置中，当前可以先查看页面交互。",
@@ -817,7 +821,7 @@ export async function POST(request: Request) {
             });
       if (knowledgeInput) content.push(knowledgeInput);
       const result = await callModel({
-        apiKey,
+        endpoint,
         instructions: getSystemPrompt(moduleValue),
         content,
         maxOutputTokens: moduleValue === "main-image" ? 8000 : 7000,
@@ -873,7 +877,7 @@ export async function POST(request: Request) {
         });
         if (knowledgeInput) content.push(knowledgeInput);
         const result = await callModel({
-          apiKey,
+          endpoint,
           instructions: getSystemPrompt(module),
           content,
           maxOutputTokens: 4500,
@@ -913,7 +917,7 @@ export async function POST(request: Request) {
     ];
     if (knowledgeInput) summaryContent.push(knowledgeInput);
     const result = await callModel({
-      apiKey,
+      endpoint,
       instructions: getCompleteSummaryPrompt(),
       content: summaryContent,
       maxOutputTokens: 7000,
@@ -964,4 +968,8 @@ export async function POST(request: Request) {
     console.error("Analysis request failed", error);
     return jsonResponse({ error: "分析请求失败，请稍后重试。" }, 500);
   }
+}
+
+export async function POST(request: Request) {
+  return handleAnalyze(request);
 }

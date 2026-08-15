@@ -123,6 +123,19 @@ function neigongRequest(extra = {}) {
   };
 }
 
+function nuwaRuntimeHeaders() {
+  return {
+    "X-Nuwa-Model-Api-Key": "site-model-key",
+    "X-Nuwa-Model-Base-Url": "https://site-model.example.com/v1",
+    "X-Nuwa-Model-Name": "site-gpt",
+    "X-Nuwa-Model-Provider-Type": "openai",
+    "X-Nuwa-Vision-Api-Key": "site-vision-key",
+    "X-Nuwa-Vision-Base-Url": "https://site-vision.example.com/v1",
+    "X-Nuwa-Vision-Model-Name": "site-vision",
+    "X-Nuwa-Vision-Provider-Type": "openai",
+  };
+}
+
 test("Nuwa neigong route rejects missing proxy token before model execution", async () => {
   process.env.OPENAI_API_KEY = "model-key";
   process.env.PRODUCT_ANALYSIS_PROXY_TOKEN = "proxy-secret";
@@ -171,6 +184,7 @@ test("Nuwa neigong route preserves the strict original task without knowledge in
       headers: {
         "Content-Type": "application/json",
         "X-Product-Analysis-Token": "proxy-secret",
+        ...nuwaRuntimeHeaders(),
       },
       body: JSON.stringify(neigongRequest()),
     }),
@@ -179,6 +193,46 @@ test("Nuwa neigong route preserves the strict original task without knowledge in
   assert.equal(response.status, 200);
   const upstreamText = JSON.stringify(upstreamBody.input);
   assert.doesNotMatch(upstreamText, /knowledge_context|非权威补充资料/);
+});
+
+test("Nuwa neigong route uses the site's default model runtime without a Worker API key", async () => {
+  delete process.env.OPENAI_API_KEY;
+  process.env.PRODUCT_ANALYSIS_PROXY_TOKEN = "proxy-secret";
+  let upstreamUrl;
+  let upstreamAuthorization;
+  let upstreamBody;
+  globalThis.fetch = async (url, init) => {
+    upstreamUrl = String(url);
+    upstreamAuthorization = init.headers.Authorization;
+    upstreamBody = JSON.parse(init.body);
+    return Response.json({
+      output_text: JSON.stringify({
+        labels: [{
+          rowId: "r1",
+          typeId: "t1",
+          evidenceSource: "initial",
+          evidenceQuote: "洗后头皮清爽",
+        }],
+      }),
+    });
+  };
+
+  const response = await nuwaNeigongPost(
+    new Request("http://localhost/api/nuwa/neigong/analyze", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Product-Analysis-Token": "proxy-secret",
+        ...nuwaRuntimeHeaders(),
+      },
+      body: JSON.stringify(neigongRequest()),
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(upstreamUrl, "https://site-model.example.com/v1/responses");
+  assert.equal(upstreamAuthorization, "Bearer site-model-key");
+  assert.equal(upstreamBody.model, "site-gpt");
 });
 
 test("legacy neigong route keeps rejecting fields outside its strict schema", async () => {
@@ -243,6 +297,41 @@ test("Nuwa generic route rejects missing token even when no knowledge is selecte
   }));
   assert.equal(response.status, 401);
   assert.equal(modelCalls, 0);
+});
+
+test("Nuwa generic route uses the site's default model runtime without a Worker API key", async () => {
+  delete process.env.OPENAI_API_KEY;
+  process.env.PRODUCT_ANALYSIS_PROXY_TOKEN = "proxy-secret";
+  let upstreamUrl;
+  let upstreamAuthorization;
+  let upstreamBody;
+  globalThis.fetch = async (url, init) => {
+    upstreamUrl = String(url);
+    upstreamAuthorization = init.headers.Authorization;
+    upstreamBody = JSON.parse(init.body);
+    return Response.json({ output_text: "| 结论 | 证据 |\n|---|---|\n| 可用 | market.txt |" });
+  };
+
+  const response = await nuwaGenericPost(new Request("http://localhost/api/nuwa/analyze", {
+    method: "POST",
+    headers: {
+      "X-Product-Analysis-Token": "proxy-secret",
+      "X-Nuwa-Model-Api-Key": "site-model-key",
+      "X-Nuwa-Model-Base-Url": "https://site-model.example.com/v1",
+      "X-Nuwa-Model-Name": "site-gpt",
+      "X-Nuwa-Model-Provider-Type": "openai",
+      "X-Nuwa-Vision-Api-Key": "site-vision-key",
+      "X-Nuwa-Vision-Base-Url": "https://site-vision.example.com/v1",
+      "X-Nuwa-Vision-Model-Name": "site-vision",
+      "X-Nuwa-Vision-Provider-Type": "openai",
+    },
+    body: genericForm(),
+  }));
+
+  assert.equal(response.status, 200);
+  assert.equal(upstreamUrl, "https://site-model.example.com/v1/responses");
+  assert.equal(upstreamAuthorization, "Bearer site-model-key");
+  assert.equal(upstreamBody.model, "site-gpt");
 });
 
 test("generic route appends authorized knowledge without altering the system prompt", async () => {

@@ -3,6 +3,8 @@
 import { callNeigongModel, NeigongModelError } from "../../../../lib/neigong/server/model.ts";
 // @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { validateModelTaskRequest } from "../../../../lib/neigong/server/schemas.ts";
+// @ts-expect-error TS5097 is a no-emit bundler restriction.
+import type { NuwaModelRuntime } from "../../../../lib/server/nuwa-model-runtime.ts";
 
 export const runtime = "edge";
 
@@ -57,7 +59,7 @@ async function readLimitedBody(request: Request): Promise<string | Response> {
   return text;
 }
 
-export async function POST(request: Request) {
+export async function handleNeigongAnalyze(request: Request, runtime?: NuwaModelRuntime) {
   const bodyText = await readLimitedBody(request);
   if (bodyText instanceof Response) return bodyText;
 
@@ -70,11 +72,11 @@ export async function POST(request: Request) {
 
   const validation = validateModelTaskRequest(value);
   if (!validation.ok) return failure(validation.code, validation.error, false, 400);
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = runtime?.primary.apiKey ?? process.env.OPENAI_API_KEY;
   if (!apiKey) return failure("MODEL_NOT_CONFIGURED", "模型服务未配置", false, 503);
 
   try {
-    const result = await callNeigongModel(validation.value, apiKey, request.signal);
+    const result = await callNeigongModel(validation.value, apiKey, request.signal, runtime);
     const clientResult = validation.value.task === "synthesis"
       ? {
           findings: result.findings.map((finding) => ({
@@ -109,4 +111,8 @@ export async function POST(request: Request) {
     }
     return failure("MODEL_INTERNAL", "模型调用失败", true, 500);
   }
+}
+
+export async function POST(request: Request) {
+  return handleNeigongAnalyze(request);
 }

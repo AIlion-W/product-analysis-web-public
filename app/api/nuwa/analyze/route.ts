@@ -1,8 +1,10 @@
 // Node contract tests execute source TypeScript directly; runtime imports need extensions.
 // @ts-expect-error TS5097 is a no-emit bundler restriction.
-import { POST as analyze } from "../../analyze/route.ts";
+import { handleAnalyze } from "../../analyze/route.ts";
 // @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { authorizeProxyToken } from "../../../../lib/server/knowledge-context.ts";
+// @ts-expect-error TS5097 is a no-emit bundler restriction.
+import { readNuwaModelRuntime } from "../../../../lib/server/nuwa-model-runtime.ts";
 
 export const runtime = "edge";
 
@@ -19,5 +21,12 @@ export async function POST(request: Request) {
       },
     );
   }
-  return analyze(request);
+  const runtime = readNuwaModelRuntime(request.headers);
+  if (!runtime.ok) {
+    return Response.json(
+      { error: runtime.error, code: runtime.code },
+      { status: runtime.status, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+  return handleAnalyze(request, runtime.value);
 }
