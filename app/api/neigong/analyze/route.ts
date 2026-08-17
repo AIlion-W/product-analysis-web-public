@@ -1,10 +1,8 @@
 // Node contract tests execute source TypeScript directly; runtime imports need extensions.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { callNeigongModel, NeigongModelError } from "../../../../lib/neigong/server/model.ts";
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { validateModelTaskRequest } from "../../../../lib/neigong/server/schemas.ts";
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import type { NuwaModelRuntime } from "../../../../lib/server/nuwa-model-runtime.ts";
+import type { SynthesisOutput } from "../../../../lib/neigong/types.ts";
 
 export const runtime = "edge";
 
@@ -77,9 +75,11 @@ export async function handleNeigongAnalyze(request: Request, runtime?: NuwaModel
 
   try {
     const result = await callNeigongModel(validation.value, apiKey, request.signal, runtime);
+    // callNeigongModel already validated the output against this task's schema,
+    // so the synthesis branch is the matching member of the output union.
     const clientResult = validation.value.task === "synthesis"
       ? {
-          findings: result.findings.map((finding) => ({
+          findings: (result as SynthesisOutput).findings.map((finding) => ({
             id: finding.id,
             status: finding.status,
             evidenceIds: [...finding.evidenceIds],

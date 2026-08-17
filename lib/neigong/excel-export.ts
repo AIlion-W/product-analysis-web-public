@@ -1,13 +1,10 @@
 // Node executes this source TypeScript directly in contract tests.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { buildWorkbookFromTables, type ExportTable } from "../excel-export.ts";
 
 import type { Action, ReportData } from "./types";
 // Node executes this source TypeScript directly in contract tests.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { reportPresentationMetrics } from "./report-presentation.ts";
 // Node executes this source TypeScript directly in contract tests.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { validateEvidenceGraph } from "./rules.ts";
 
 type ExportExtension = "html" | "xlsx";

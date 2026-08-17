@@ -1,9 +1,7 @@
 import type { Action, ReportData } from "./types.ts";
 // Node executes this source TypeScript directly in behavioral contract tests.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { DIMENSION_LABELS } from "./catalog.ts";
 // Node executes this source TypeScript directly in behavioral contract tests.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { selectF01TaxonomyAggregate, validateEvidenceGraph } from "./rules.ts";
 
 export type ReportPresentationMetrics = {
@@ -33,7 +31,7 @@ export function sourceKindLabel(kind: string): string {
 }
 
 export function dimensionLabel(dimension: string): string {
-  return DIMENSION_LABELS[dimension] ?? dimension;
+  return (DIMENSION_LABELS as Record<string, string>)[dimension] ?? dimension;
 }
 
 export function statusLabel(status: string): string {
@@ -56,11 +54,11 @@ export function formatGeneratedAt(generatedAt: string): string {
   return `${value("year")}-${value("month")}-${value("day")} ${value("hour")}:${value("minute")}（北京时间）`;
 }
 
-function actionFindingIds(action: Pick<Action, "findingId" | "findingIds">): string[] {
+export function actionFindingIds(action: Pick<Action, "findingId" | "findingIds">): string[] {
   return action.findingIds?.length ? action.findingIds : action.findingId ? [action.findingId] : [];
 }
 
-function actionEvidenceIds(action: Pick<Action, "evidenceId" | "evidenceIds">): string[] {
+export function actionEvidenceIds(action: Pick<Action, "evidenceId" | "evidenceIds">): string[] {
   return action.evidenceIds?.length ? action.evidenceIds : action.evidenceId ? [action.evidenceId] : [];
 }
 

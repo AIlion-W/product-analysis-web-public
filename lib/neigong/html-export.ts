@@ -1,7 +1,8 @@
 import type { ReportData } from "./types";
 // Node executes this source TypeScript directly in behavioral contract tests.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import {
+  actionEvidenceIds,
+  actionFindingIds,
   businessActionReason,
   dimensionLabel,
   formatGeneratedAt,
@@ -11,7 +12,6 @@ import {
   statusLabel,
 } from "./report-presentation.ts";
 // Node executes this source TypeScript directly in contract tests.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { validateEvidenceGraph } from "./rules.ts";
 
 function assertValidatedReport(report: ReportData): void {
@@ -116,8 +116,8 @@ function exportableReport(report: ReportData) {
       priority: text(action.priority),
       action: text(action.action),
       reason: text(action.reason),
-      findingIds: strings(action.findingIds ?? (action.findingId ? [action.findingId] : [])),
-      evidenceIds: strings(action.evidenceIds ?? (action.evidenceId ? [action.evidenceId] : [])),
+      findingIds: strings(actionFindingIds(action)),
+      evidenceIds: strings(actionEvidenceIds(action)),
     })),
   };
 }
@@ -260,7 +260,7 @@ export function buildNeigongHtml(report: ReportData): string {
   const section5 = section("05", "分析结论", findingsBody);
 
   const actionsBody = report.actions.length
-    ? `<ol>${report.actions.map((entry) => `<li><strong>${escapeHtml(entry.priority)} · ${escapeHtml(entry.action)}</strong><p>${escapeHtml(businessActionReason(entry))}</p>${auditDetails([`${entry.findingIds.join("、")} → ${entry.evidenceIds.join("、")}`])}</li>`).join("")}</ol>`
+    ? `<ol>${report.actions.map((entry) => `<li><strong>${escapeHtml(entry.priority)} · ${escapeHtml(entry.action)}</strong><p>${escapeHtml(businessActionReason(entry))}</p>${auditDetails([`${actionFindingIds(entry).join("、")} → ${actionEvidenceIds(entry).join("、")}`])}</li>`).join("")}</ol>`
     : empty("没有通过分析结论与证据门禁的行动。");
   const section6 = section("06", "落地清单", actionsBody);
   const serialized = serializeForInlineScript(exportableReport(report));

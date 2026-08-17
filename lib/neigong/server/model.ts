@@ -1,10 +1,7 @@
 import type { ModelTask, ModelTaskOutputMap, ModelTaskRequest } from "../types";
 // Node contract tests execute source TypeScript directly; runtime imports need extensions.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { buildNeigongInput, getNeigongInstructions } from "./prompts.ts";
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { RESPONSE_FORMATS, validateModelTaskReferences, validateModelTaskRequest, validateModelTaskResult } from "./schemas.ts";
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import type { NuwaModelRuntime } from "../../server/nuwa-model-runtime.ts";
 
 export const MAX_OUTPUT_TOKENS: Record<ModelTask, number> = {

@@ -18,7 +18,6 @@ import type {
   Top20Assessment,
 } from "./types";
 // Node executes this source TypeScript directly in contract tests.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { DIMENSION_LABELS, DIMENSIONS, TAXONOMY, TOPICS } from "./catalog.ts";
 import {
   buildDedupAggregate,
@@ -32,7 +31,6 @@ import {
   validateEvidenceGraph,
   type EvidenceGraphError,
   type FindingProblemState,
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 } from "./rules.ts";
 
 export interface BuildReportCoreInput {

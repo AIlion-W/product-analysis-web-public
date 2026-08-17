@@ -1,8 +1,6 @@
 // Node contract tests execute source TypeScript directly; runtime imports need extensions.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { TAXONOMY, TOPICS } from "../catalog.ts";
 import type { ModelTask, ModelTaskRequest } from "../types";
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { COMPLAINT_DECISION_MAP, OWN_PRODUCT_KNOWLEDGE } from "./knowledge.ts";
 
 type InputContent =

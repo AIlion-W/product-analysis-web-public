@@ -52,7 +52,10 @@ export function narrowQueueResult(value: ModelTaskResult): void {
     // @ts-expect-error screenshot output does not contain actions.
     void value.output.actions;
   } else {
-    void value.output.actions[0]?.findingIds;
+    // Actions are built deterministically from findings, never returned by the model.
+    void value.output.findings[0]?.evidenceIds;
+    // @ts-expect-error synthesis output does not contain actions.
+    void value.output.actions;
     // @ts-expect-error synthesis output does not contain labels.
     void value.output.labels;
   }

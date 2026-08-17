@@ -14,7 +14,6 @@ import type {
   TopicAggregate,
 } from "./types";
 // Node runs the source TypeScript directly in the rule tests, so the extension is required at runtime.
-// @ts-expect-error TS5097 is a no-emit bundler restriction, not a runtime incompatibility.
 import { TAXONOMY, TOPICS } from "./catalog.ts";
 
 const TYPE_ID_LIST = ["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8"] as const;
@@ -829,7 +828,7 @@ export function validateEvidenceGraph(input: LooseReport): EvidenceGraphValidati
           continue;
         }
         const product = productById.get(node.productId);
-        if (!product || questionCountByProduct.get(node.productId)! < 90 || (product.role !== "self" && product.role !== "competitor")) {
+        if (!product || (questionCountByProduct.get(node.productId) ?? 0) < 90 || (product.role !== "self" && product.role !== "competitor")) {
           errors.push({ code: "INELIGIBLE_COMPETITOR_EVIDENCE", message: `F03 不可使用问题数不足 90 条的产品证据：${evidenceId}。` });
         }
       }

@@ -978,3 +978,71 @@ test("Office 锁文件优先忽略，即使声明超限也不读取", async () =
   assert.equal(parsed.warnings.some(({ code }) => code === "TEMPORARY_FILE_IGNORED"), true);
   assert.equal(parsed.errors.some(({ code }) => code === "XLSX_ARCHIVE_LIMIT"), false);
 });
+
+test("问大家旧版表头的序号列按 NFKC 与首尾空格规范化识别", () => {
+  const rows = [
+    ["序号 ", "昵称", "提问时间", "问题", "回答"],
+    [1, "买家一", "2026-08-01", "保温多久", "24 小时"],
+    [2, "买家二", "2026-08-02", "材质是什么", "316 不锈钢"],
+  ];
+
+  const parsed = parseQuestionRows("own", rows);
+
+  assert.deepEqual(parsed.errors, []);
+  assert.equal(parsed.rows.length, 2);
+});
+
+test("问大家四列表头忽略 Excel 补齐的尾部空列", () => {
+  const rows = [
+    ["昵称", "时间", "问题", "问答", null],
+    ["买家一", "2026-08-01", "保温多久", "24 小时", null],
+  ];
+
+  const parsed = parseQuestionRows("own", rows);
+
+  assert.deepEqual(parsed.errors, []);
+  assert.equal(parsed.rows.length, 1);
+  assert.equal(parsed.rows[0].rank, 1);
+});
+
+test("评价表头忽略 Excel 补齐的尾部空列", () => {
+  const parsed = parseReviewRows("own", "default", [
+    [...reviewHeader, null],
+    [1, "买家一", "2026-08-01", "好评", "红色", "很好用", "", null],
+  ]);
+
+  assert.deepEqual(parsed.errors, []);
+  assert.equal(parsed.rows.length, 1);
+});
+
+test("全角数字排名按 NFKC 归一，不再被当作缺失排名排除", () => {
+  const parsed = parseReviewRows("own", "default", [
+    reviewHeader,
+    ["１", "买家一", "2026-08-01", "好评", "红色", "很好用", ""],
+  ]);
+
+  assert.deepEqual(parsed.errors, []);
+  assert.deepEqual(parsed.excludedRows, []);
+  assert.equal(parsed.rows[0].rank, 1);
+});
+
+test("缺列提示使用业务列名，不暴露内部字段 id", () => {
+  const review = parseReviewRows("own", "default", [
+    ["序号", "用户昵称", "评价时间", "评价类型", "SKU", "初评内容"],
+    [1, "买家一", "2026-08-01", "好评", "红色", "很好用"],
+  ]);
+  const question = parseQuestionRows("own", [
+    ["时间", "昵称", "问题", "问答"],
+    ["2026-08-01", "买家一", "保温多久", "24 小时"],
+  ]);
+
+  const missing = [...review.errors, ...question.errors].filter(({ code }) => code === "MISSING_COLUMN");
+  assert.equal(missing.length, 2);
+  assert.deepEqual(missing.map(({ message }) => message), [
+    "缺少必填列：追评正文。",
+    "缺少必填列：排名（序号）。",
+  ]);
+  for (const { message } of missing) {
+    assert.equal(/followupText|initialText|questionText|nickname|reviewType|\brank\b/.test(message), false);
+  }
+});

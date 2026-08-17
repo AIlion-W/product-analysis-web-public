@@ -2,7 +2,6 @@ import { createElement, type ReactElement } from "react";
 
 import type { ReportData } from "../../lib/neigong/types.ts";
 // Node executes this source TypeScript directly in behavioral contract tests.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { reportPresentationMetrics } from "../../lib/neigong/report-presentation.ts";
 
 function metricCard(label: string, value: string, detail?: string): ReactElement {

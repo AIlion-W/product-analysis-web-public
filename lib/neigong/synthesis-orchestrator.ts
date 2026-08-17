@@ -1,5 +1,4 @@
 // Node contract tests execute source TypeScript directly; runtime imports need extensions.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { createAsyncSessionGuard, isAbortError, type AsyncSessionRun } from "../async-session.ts";
 
 export type SynthesisFailure = {

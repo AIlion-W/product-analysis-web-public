@@ -7,6 +7,8 @@ import {
 import { buildNeigongHtml } from "@/lib/neigong/html-export";
 import type { ReportData } from "@/lib/neigong/types";
 import {
+  actionEvidenceIds,
+  actionFindingIds,
   businessActionReason,
   dimensionLabel,
   questionSectionTitle,
@@ -282,7 +284,7 @@ export function ReportDashboard({ report }: ReportDashboardProps) {
                   <p>{businessActionReason(entry)}</p>
                   <details className="neigong-report-audit">
                     <summary>查看审计证据</summary>
-                    <code>{entry.findingIds.join("、")} → {entry.evidenceIds.join("、")}</code>
+                    <code>{actionFindingIds(entry).join("、")} → {actionEvidenceIds(entry).join("、")}</code>
                   </details>
                 </div>
               </li>
