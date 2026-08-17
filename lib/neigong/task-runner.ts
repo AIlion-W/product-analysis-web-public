@@ -8,10 +8,8 @@ import type {
   SynthesisFacts,
 } from "./types";
 // Node contract tests execute source TypeScript directly; runtime imports need extensions.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { isAbortError, throwIfAborted } from "../async-session.ts";
 // Node contract tests execute source TypeScript directly; runtime imports need extensions.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { MAX_SCREENSHOT_BYTES, prepareReviewScreenshot, type PreparedReviewScreenshot } from "./image.ts";
 
 export interface AnalysisTask {

@@ -1,12 +1,10 @@
 // Node contract tests execute source TypeScript directly; runtime imports need extensions.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import {
   createAsyncSessionGuard,
   type AsyncSessionGuard,
   type AsyncSessionRun,
 } from "../async-session.ts";
 // Node contract tests execute source TypeScript directly; runtime imports need extensions.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import {
   runTaskQueue,
   taskQueueReducer,

@@ -10,6 +10,10 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
+    // Node runs the source TypeScript directly in the contract tests, so runtime
+    // imports must keep their .ts extensions.
+    "allowImportingTsExtensions": true,
+    "types": ["@cloudflare/workers-types"],
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,

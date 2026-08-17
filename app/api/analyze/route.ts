@@ -1,5 +1,4 @@
 // Node contract tests execute source TypeScript directly; runtime imports need extensions.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import {
   getCompleteSummaryPrompt,
   getSystemPrompt,
@@ -8,9 +7,7 @@ import {
   MODULE_LABELS,
   type AnalysisModule,
 } from "../../../lib/prompts.ts";
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { validateMainImageFiles } from "../../../lib/main-image.ts";
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import {
   authorizeKnowledgeContext,
   buildKnowledgeContextInput,

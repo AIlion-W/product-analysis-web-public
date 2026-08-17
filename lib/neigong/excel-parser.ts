@@ -13,7 +13,6 @@ import type {
   SourceSummary,
 } from "./types";
 // Node contract tests execute source TypeScript directly; runtime imports need extensions.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import {
   MAX_XLSX_COMPRESSED_BYTES,
   extractValidatedXlsxArchive,
@@ -110,11 +109,43 @@ function textValue(value: unknown): string {
 
 function rankValue(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
-  const text = textValue(value);
+  // NFKC folds full-width digits, which some exports emit, onto ASCII digits.
+  const text = textValue(value).normalize("NFKC");
   if (!/^\d+$/u.test(text)) return undefined;
   const parsed = Number(text);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
+
+/** Single normalization rule for header cells, shared by mapping and profile detection. */
+function normalizeHeaderName(cell: unknown): string {
+  if (cell === null || cell === undefined) return "";
+  return String(cell).normalize("NFKC").trim();
+}
+
+/** Spreadsheet readers pad rows to the widest row, so trailing blanks are not columns. */
+function withoutTrailingBlankHeaders(header: unknown[]): unknown[] {
+  const trimmed = [...header];
+  while (trimmed.length > 0 && normalizeHeaderName(trimmed.at(-1)) === "") trimmed.pop();
+  return trimmed;
+}
+
+const REVIEW_FIELD_LABELS: Record<(typeof REVIEW_COLUMNS)[number], string> = {
+  rank: "排名（序号）",
+  nickname: "昵称",
+  date: "评价时间",
+  reviewType: "评价类型",
+  sku: "SKU",
+  initialText: "初评正文",
+  followupText: "追评正文",
+};
+
+const QUESTION_FIELD_LABELS: Record<QuestionColumn, string> = {
+  rank: "排名（序号）",
+  nickname: "昵称",
+  date: "提问时间",
+  questionText: "问题",
+  answer: "回答",
+};
 
 function decodeXmlAttribute(value: string): string {
   return value.replace(/&(?:#(\d+)|#x([\da-f]+)|amp|apos|gt|lt|quot);/giu, (entity, decimal, hexadecimal) => {
@@ -390,7 +421,7 @@ function headerIndex<T extends string>(
   header: unknown[] | undefined,
   columns: Record<string, T>,
   required: readonly T[],
-  options: { ignoreUnknown?: boolean } = {},
+  options: { ignoreUnknown?: boolean; labels?: Partial<Record<T, string>> } = {},
 ): {
   indexes: Partial<Record<T, number>>;
   columns: SourceMapping["columns"];
@@ -412,8 +443,7 @@ function headerIndex<T extends string>(
   }
 
   header.forEach((cell, index) => {
-    const name = cell === null || cell === undefined ? "" : String(cell);
-    const normalizedName = name.normalize("NFKC").trim();
+    const normalizedName = normalizeHeaderName(cell);
     const column = columns[normalizedName];
     if (!column) {
       const issue = options.ignoreUnknown
@@ -432,7 +462,8 @@ function headerIndex<T extends string>(
 
   for (const column of required) {
     if (indexes[column] === undefined) {
-      errors.push({ code: "MISSING_COLUMN", message: `缺少必填列：${column}。` });
+      // Operators read this message, so name the business column, not the field id.
+      errors.push({ code: "MISSING_COLUMN", message: `缺少必填列：${options.labels?.[column] ?? column}。` });
     }
   }
 
@@ -502,10 +533,10 @@ export function parseReviewRows(
   const kind = reviewKindFor(sort);
   const sourceId = sourceIdFor(productId, kind);
   const { indexes, columns, errors, warnings } = headerIndex(
-    rows[0],
+    rows[0] === undefined ? undefined : withoutTrailingBlankHeaders(rows[0]),
     REVIEW_HEADER_MAP,
     REVIEW_COLUMNS,
-    { ignoreUnknown: true },
+    { ignoreUnknown: true, labels: REVIEW_FIELD_LABELS },
   );
   const sourceLabel = sort === "default" ? "默认排序评价" : "时间排序评价";
   const result: ParsedRows<ReviewRow> = {
@@ -578,15 +609,22 @@ export function parseQuestionRows(
 ): ParsedRows<QuestionRow> {
   const kind: SourceKind = "questions";
   const sourceId = sourceIdFor(productId, kind);
-  const rawHeader = rows[0] ?? [];
+  const rawHeader = withoutTrailingBlankHeaders(rows[0] ?? []);
   const normalizedHeader = rawHeader.map((cell) => normalizeExactText(textValue(cell)));
   const ranklessProfile = normalizedHeader.length === 4
     && normalizedHeader.every((name, index) => name === ["昵称", "时间", "问题", "问答"][index]);
-  const hasExplicitRank = rawHeader.some((cell) => cell === "序号" || cell === "排名");
+  // Detect the rank column with the same normalization the mapping uses, so a
+  // header like "序号 " cannot map to rank yet still fail the profile check.
+  const hasExplicitRank = rawHeader.some((cell) => QUESTION_HEADER_MAP[normalizeHeaderName(cell)] === "rank");
   const required: readonly QuestionColumn[] = ranklessProfile
     ? ["nickname", "date", "questionText", "answer"]
     : ["rank", "questionText", "answer", "date"];
-  const indexed = headerIndex(ranklessProfile ? normalizedHeader : rawHeader, QUESTION_HEADER_MAP, required);
+  const indexed = headerIndex(
+    ranklessProfile ? normalizedHeader : rawHeader,
+    QUESTION_HEADER_MAP,
+    required,
+    { labels: QUESTION_FIELD_LABELS },
+  );
   const indexes = indexed.indexes;
   const columns = ranklessProfile
     ? indexed.columns.map((column, index) => ({ ...column, header: textValue(rawHeader[index]) }))

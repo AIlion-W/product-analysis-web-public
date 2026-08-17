@@ -1,9 +1,7 @@
 import type { AnalysisTask } from "./task-runner";
 // Node contract tests execute source TypeScript directly; runtime imports need extensions.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { isAbortError, throwIfAborted } from "../async-session.ts";
 // Node contract tests execute source TypeScript directly; runtime imports need extensions.
-// @ts-expect-error TS5097 is a no-emit bundler restriction.
 import { toModelTaskResult, type ModelTaskApiSuccess } from "./types.ts";
 
 function taskError(code: string, message: string, retryable: boolean): Error {

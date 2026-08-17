@@ -1,5 +1,7 @@
 const ZIP_CENTRAL_DIRECTORY_HEADER = 0x02014b50;
 const ZIP_END_OF_CENTRAL_DIRECTORY = 0x06054b50;
+/** General purpose bit 11: entry names are UTF-8. */
+const ZIP_UTF8_NAME_FLAG = 0x800;
 const MAX_ZIP_ENTRIES = 120;
 const MAX_ZIP_ENTRY_BYTES = 15 * 1024 * 1024;
 const MAX_ZIP_EXPANDED_BYTES = 60 * 1024 * 1024;
@@ -211,6 +213,35 @@ export function buildCompetitorManifest(recognition: CompetitorRecognition) {
   };
 }
 
+/**
+ * Decodes a ZIP entry name. Windows 简体中文 built-in compression stores names in
+ * GBK and leaves the UTF-8 flag clear, so decoding everything as UTF-8 turns
+ * competitor folder names into replacement characters and breaks grouping.
+ */
+function createArchiveNameDecoder() {
+  const utf8 = new TextDecoder("utf-8");
+  const strictUtf8 = new TextDecoder("utf-8", { fatal: true });
+  let legacy: TextDecoder | null | undefined;
+
+  return (nameBytes: Uint8Array, flags: number): string => {
+    if (flags & ZIP_UTF8_NAME_FLAG) return utf8.decode(nameBytes);
+    // Many tools write UTF-8 names without setting the flag, so try UTF-8 first
+    // and only fall back to GBK when the bytes are not valid UTF-8.
+    try {
+      return strictUtf8.decode(nameBytes);
+    } catch {
+      if (legacy === undefined) {
+        try {
+          legacy = new TextDecoder("gbk");
+        } catch {
+          legacy = null;
+        }
+      }
+      return legacy ? legacy.decode(nameBytes) : utf8.decode(nameBytes);
+    }
+  };
+}
+
 export function listZipCompetitorEntries(
   bytes: Uint8Array,
   archiveName: string,
@@ -240,7 +271,7 @@ export function listZipCompetitorEntries(
     throw new Error("ZIP_LIMIT");
   }
 
-  const decoder = new TextDecoder("utf-8");
+  const decodeArchiveName = createArchiveNameDecoder();
   const entries: CompetitorUploadEntry[] = [];
   let cursor = centralDirectoryOffset;
   let expandedBytes = 0;
@@ -276,7 +307,7 @@ export function listZipCompetitorEntries(
       throw new Error("ZIP_EXPANDED_LIMIT");
     }
 
-    const rawName = decoder.decode(bytes.subarray(nameStart, nameEnd));
+    const rawName = decodeArchiveName(bytes.subarray(nameStart, nameEnd), flags);
     const name = normalizePath(rawName);
     if (
       name &&
